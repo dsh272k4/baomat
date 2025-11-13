@@ -7,7 +7,7 @@ import dotenv from "dotenv";
 import fetch from "node-fetch";
 import fs from "fs";
 import path from "path";
-import authRoutes from "./routes/auth.js";
+import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/admin.js";
 import logRoutes from "./routes/logs.js";
 import verifyToken from "./middleware/verifyToken.js";
