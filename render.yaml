@@ -1,0 +1,37 @@
+services:
+  - type: web
+    name: secure-backend
+    env: node
+    region: singapore
+    buildCommand: "npm install"
+    startCommand: "node server.js"
+    plan: free
+    envVars:
+      - key: PORT
+        value: 10000
+      - key: DB_HOST
+        fromDatabase: secure-db
+        property: host
+      - key: DB_USER
+        fromDatabase: secure-db
+        property: user
+      - key: DB_PASSWORD
+        fromDatabase: secure-db
+        property: password
+      - key: DB_NAME
+        fromDatabase: secure-db
+        property: database
+      - key: JWT_SECRET
+        sync: false
+      - key: EMAIL_USER
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: RECAPTCHA_SECRET_KEY
+        sync: false
+
+databases:
+  - name: secure-db
+    region: singapore
+    databaseName: secure_app
+    user: secure_user
