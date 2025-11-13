@@ -1,5 +1,5 @@
 // secure-backend/middleware/passwordPolicy.js
-import bcrypt from "bcrypt";
+import bcrypt from "bcryptjs";
 
 // Chính sách mật khẩu
 export const PASSWORD_POLICY = {
