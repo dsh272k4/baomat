@@ -8,8 +8,8 @@ import fetch from "node-fetch";
 import fs from "fs";
 import path from "path";
 import authRoutes from "./routes/authRoutes.js";
-import adminRoutes from "./routes/admin.js";
-import logRoutes from "./routes/logs.js";
+import adminRoutes from "./routes/adminRoutes.js";
+import logRoutes from "./routes/logRoutes.js";
 import verifyToken from "./middleware/verifyToken.js";
 import checkPasswordExpiry from "./middleware/checkPasswordExpiry.js";
 
