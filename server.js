@@ -22,10 +22,16 @@ const PORT = process.env.PORT || 3001;
 const logDir = "/tmp/logs";
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
-// middleware
 app.use(cors({
-    origin: "*", // hoặc FE domain: https://dta2k4.shop
+    origin: [
+        "https://dta2k4.shop",
+        "https://baomat.onrender.com"
+    ],
+    methods: ["GET", "POST", "PUT", "DELETE"],
+    allowedHeaders: ["Content-Type", "Authorization"],
+    credentials: true
 }));
+
 app.use(helmet());
 app.use(express.json());
 app.use(rateLimit({ windowMs: 60 * 1000, max: 100 }));
