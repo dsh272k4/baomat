@@ -1,6 +1,6 @@
 // secure-backend/middleware/passwordPolicy.js
 import bcrypt from "bcryptjs";
-
+import { pool } from "../config/db.js";
 // Chính sách mật khẩu
 export const PASSWORD_POLICY = {
     minLength: 12,
