@@ -1,89 +1,61 @@
-import { createTransporter, getLoginAlertTemplate } from '../config/emailConfig.js';
+// secure-backend/services/emailService.js
+import { Resend } from "resend";
+import dotenv from "dotenv";
 
-export class EmailService {
-    constructor() {
-        this.transporter = createTransporter();
-    }
+dotenv.config();
 
-    // Kiểm tra kết nối email
-    async verifyConnection() {
-        try {
-            await this.transporter.verify();
-            console.log('✅ Email server connection verified');
-            return true;
-        } catch (error) {
-            console.error('❌ Email server connection failed:', error);
-            return false;
+export const resend = new Resend(process.env.RESEND_API_KEY);
+
+// HTML template email
+function loginAlertTemplate(username, time, ip, browser) {
+    return `
+    <div style="font-family: Arial; padding: 20px;">
+      <h2>🔐 Cảnh báo đăng nhập</h2>
+      <p>Tài khoản <b>${username}</b> vừa đăng nhập vào hệ thống.</p>
+      <p><b>Thời gian:</b> ${time}</p>
+      <p><b>Địa chỉ IP:</b> ${ip}</p>
+      <p><b>Trình duyệt:</b> ${browser}</p>
+      <br>
+      <p>Nếu không phải bạn, hãy đổi mật khẩu ngay.</p>
+    </div>
+  `;
+}
+
+class EmailService {
+    async sendLoginAlert(email, username, loginData) {
+        if (!process.env.RESEND_API_KEY) {
+            console.log("❌ RESEND_API_KEY missing");
+            return { success: false };
         }
-    }
 
-    // Gửi email thông báo đăng nhập
-    async sendLoginAlert(userEmail, username, loginData) {
-        // Kiểm tra xem có cấu hình email không
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-            console.log('⚠️ Email configuration missing - skipping email send');
-            return { success: false, error: 'Email configuration missing' };
+        if (!process.env.EMAIL_FROM) {
+            console.log("❌ EMAIL_FROM missing");
+            return { success: false };
         }
 
+        const html = loginAlertTemplate(
+            username,
+            loginData.loginTime,
+            loginData.ip,
+            loginData.browser
+        );
+
         try {
-            const { ip, browser, loginTime } = loginData;
+            console.log(`📧 Sending Resend alert → ${email}`);
 
-            const mailOptions = {
-                from: `"Hệ thống Bảo mật" <${process.env.EMAIL_USER}>`,
-                to: userEmail,
-                subject: `🔐 Thông báo đăng nhập - ${username}`,
-                html: getLoginAlertTemplate(username, loginTime, ip, browser)
-            };
-
-            console.log(`📧 Attempting to send login alert to: ${userEmail}`);
-
-            const result = await this.transporter.sendMail(mailOptions);
-            console.log(`✅ Login alert email sent to ${userEmail}:`, result.messageId);
-            return { success: true, messageId: result.messageId };
-        } catch (error) {
-            console.error('❌ Error sending login alert email:', error);
-            return { success: false, error: error.message };
-        }
-    }
-
-    // Kiểm tra xem user có email và muốn nhận thông báo không
-    async shouldSendLoginAlert(userId, pool) {
-        try {
-            const [rows] = await pool.query(
-                'SELECT email, receive_login_alerts FROM users WHERE id = ?',
-                [userId]
-            );
-
-            if (rows.length === 0) return { shouldSend: false, email: null };
-
-            const user = rows[0];
-            const shouldSend = user.email && user.receive_login_alerts === 1;
-
-            console.log(`📧 Email alert check for user ${userId}:`, {
-                hasEmail: !!user.email,
-                receiveAlerts: user.receive_login_alerts,
-                shouldSend
+            const result = await resend.emails.send({
+                from: process.env.EMAIL_FROM,
+                to: email,
+                subject: `🔐 Login Alert - ${username}`,
+                html,
             });
 
-            return {
-                shouldSend,
-                email: user.email
-            };
-        } catch (error) {
-            console.error('Error checking login alert preference:', error);
-            return { shouldSend: false, email: null };
+            return { success: true, id: result.id };
+        } catch (err) {
+            console.error("❌ Resend sendLoginAlert error:", err);
+            return { success: false, error: err.message };
         }
     }
 }
 
-// Tạo instance và kiểm tra kết nối
 export const emailService = new EmailService();
-
-// Kiểm tra kết nối email khi khởi động (không block startup)
-emailService.verifyConnection().then(success => {
-    if (success) {
-        console.log('🚀 Email service ready');
-    } else {
-        console.log('⚠️ Email service not available - emails will be skipped');
-    }
-})
