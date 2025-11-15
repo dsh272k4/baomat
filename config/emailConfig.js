@@ -1,51 +1,20 @@
+// secure-backend/config/emailConfig.js
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
 
 dotenv.config();
 
 export const createTransporter = () => {
-    // Kiểm tra xem có cấu hình email không
-    if (!process.env.EMAIL_HOST || !process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-        console.log('⚠️ Email configuration missing - email service disabled');
-        return null;
-    }
-
-    console.log('📧 Configuring email transporter:', {
-        host: process.env.EMAIL_HOST,
-        port: process.env.EMAIL_PORT,
-        user: process.env.EMAIL_USER
-    });
-
-    const transporter = nodemailer.createTransport({
+    return nodemailer.createTransport({
         host: process.env.EMAIL_HOST,
         port: Number(process.env.EMAIL_PORT) || 587,
-        secure: false,
-        requireTLS: true,
+        secure: false,                  
+        requireTLS: true, 
         auth: {
             user: process.env.EMAIL_USER,
             pass: process.env.EMAIL_PASSWORD
-        },
-        // 🔧 THÊM TIMEOUT SETTINGS
-        connectionTimeout: 10000, // 10 seconds
-        greetingTimeout: 10000,
-        socketTimeout: 15000,
-        // 🔧 THÊM RETRY SETTINGS
-        maxConnections: 5,
-        maxMessages: 10,
-        debug: process.env.NODE_ENV === 'development', // Enable debug in development
-        logger: process.env.NODE_ENV === 'development' // Enable logger in development
-    });
-
-    // Test connection khi khởi tạo
-    transporter.verify((error, success) => {
-        if (error) {
-            console.log('❌ Email server connection failed:', error.message);
-        } else {
-            console.log('✅ Email server connection verified');
         }
     });
-
-    return transporter;
 };
 
 export const getLoginAlertTemplate = (username, loginTime, ip, browser) => {

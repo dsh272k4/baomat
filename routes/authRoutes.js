@@ -54,7 +54,6 @@ router.post("/auth/register", verifyRecaptcha, async (req, res) => {
 });
 
 // LOGIN - Cập nhật để gửi email thông báo
-// LOGIN - Cập nhật để xử lý email errors tốt hơn
 router.post("/auth/login", verifyRecaptcha, async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -121,7 +120,7 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
             { expiresIn: JWT_EXPIRES }
         );
 
-        // 🔐 GỬI EMAIL THÔNG BÁO ĐĂNG NHẬP - VỚI ERROR HANDLING TỐT HƠN
+        // 🔐 GỬI EMAIL THÔNG BÁO ĐĂNG NHẬP NẾU USER CÓ EMAIL VÀ CHO PHÉP
         try {
             if (user.email && user.receive_login_alerts === 1) {
                 const loginData = {
@@ -157,18 +156,17 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
                         }
                     })
                     .catch(emailError => {
-                        console.error('Email sending process failed:', emailError);
+                        console.error('Email sending failed:', emailError);
                     });
             } else {
                 console.log(`📧 Email alert skipped for user ${user.username}:`, {
                     hasEmail: !!user.email,
-                    wantsAlerts: user.receive_login_alerts === 1,
-                    emailEnabled: emailService.isEnabled
+                    wantsAlerts: user.receive_login_alerts === 1
                 });
             }
         } catch (emailError) {
             console.error('Error in email notification process:', emailError);
-            // KHÔNG ảnh hưởng đến response đăng nhập
+            // Không throw error để không ảnh hưởng đến trải nghiệm đăng nhập
         }
 
         res.json({ token });
@@ -177,7 +175,6 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
         res.status(500).json({ message: "Lỗi máy chủ" });
     }
 });
-
 
 // GET /api/auth/profile - Cập nhật để lấy thêm thông tin email settings
 router.get("/auth/profile", verifyToken, async (req, res) => {
