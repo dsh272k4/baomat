@@ -1,5 +1,5 @@
-// secure-backend/middleware/passwordPolicy.js
 import bcrypt from "bcryptjs";
+import { pool } from "../config/db.js"; // ← THÊM IMPORT BỊ THIẾU
 
 // Chính sách mật khẩu
 export const PASSWORD_POLICY = {
@@ -9,13 +9,20 @@ export const PASSWORD_POLICY = {
     requireLowercase: true,
     requireNumbers: true,
     requireSpecialChars: true,
-    maxAgeDays: 90, // 90 ngày phải đổi mật khẩu
-    passwordHistory: 5 // Lưu lịch sử 5 mật khẩu gần nhất
+    maxAgeDays: 90,
+    passwordHistory: 5
 };
 
 // Kiểm tra độ mạnh mật khẩu
 export function validatePasswordStrength(password) {
     const errors = [];
+
+    if (typeof password !== 'string') {
+        return {
+            isValid: false,
+            errors: ["Mật khẩu phải là chuỗi ký tự"]
+        };
+    }
 
     if (password.length < PASSWORD_POLICY.minLength) {
         errors.push(`Mật khẩu phải có ít nhất ${PASSWORD_POLICY.minLength} ký tự`);
@@ -45,6 +52,11 @@ export function validatePasswordStrength(password) {
     const commonPasswords = ["Password123!", "Admin123!", "Welcome123!", "Changeme123!", "Aa@123456789"];
     if (commonPasswords.includes(password)) {
         errors.push("Mật khẩu quá phổ biến, vui lòng chọn mật khẩu khác");
+    }
+
+    // Kiểm tra sequential characters
+    if (/(.)\1{2,}/.test(password)) {
+        errors.push("Mật khẩu không được chứa nhiều hơn 2 ký tự giống nhau liên tiếp");
     }
 
     return {
@@ -81,14 +93,11 @@ export async function isPasswordInHistory(userId, newPassword, pool) {
         // Xử lý cả trường hợp là string JSON và string thường
         if (typeof historyData === 'string') {
             if (historyData.startsWith('[')) {
-                // Nếu là JSON array
                 passwordHistory = safeJsonParse(historyData);
             } else {
-                // Nếu là single hash string (trường hợp lỗi)
                 passwordHistory = [historyData];
             }
         } else if (Array.isArray(historyData)) {
-            // Nếu đã là array (trường hợp JSON column)
             passwordHistory = historyData;
         } else {
             passwordHistory = [];
@@ -113,7 +122,7 @@ export async function isPasswordInHistory(userId, newPassword, pool) {
         return false;
     } catch (error) {
         console.error("Error checking password history:", error);
-        return false; // Trả về false nếu có lỗi để không block user
+        return false;
     }
 }
 
@@ -132,22 +141,16 @@ export async function updatePasswordHistory(userId, newPasswordHash, pool) {
 
             if (typeof historyData === 'string') {
                 if (historyData.startsWith('[')) {
-                    // Nếu là JSON array
                     passwordHistory = safeJsonParse(historyData);
                 } else {
-                    // Nếu là single hash string (trường hợp lỗi)
                     passwordHistory = [historyData];
                 }
             } else if (Array.isArray(historyData)) {
-                // Nếu đã là array
                 passwordHistory = historyData;
             }
         }
 
-        // Thêm mật khẩu mới vào đầu mảng
         passwordHistory.unshift(newPasswordHash);
-
-        // Giữ chỉ số lượng mật khẩu gần nhất
         passwordHistory = passwordHistory.slice(0, PASSWORD_POLICY.passwordHistory);
 
         console.log("Updating password history:", {
@@ -165,7 +168,6 @@ export async function updatePasswordHistory(userId, newPasswordHash, pool) {
 
     } catch (error) {
         console.error("Error updating password history:", error);
-        // Không throw error để không block việc đổi mật khẩu
     }
 }
 

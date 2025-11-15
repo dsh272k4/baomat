@@ -1,8 +1,11 @@
-// secure-backend/middleware/recaptcha.js
 import dotenv from "dotenv";
 dotenv.config();
 
-const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY || "6Lf5aewrAAAAALpWLmRPTqwYTS_w7WCz4xR8-k7z";
+// SỬA LỖI CRITICAL: Xóa hardcoded secret
+const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY;
+if (!RECAPTCHA_SECRET_KEY) {
+    throw new Error("RECAPTCHA_SECRET_KEY missing in environment variables");
+}
 
 export const verifyRecaptcha = async (req, res, next) => {
     // Chỉ verify reCAPTCHA cho các route đăng ký và đăng nhập
@@ -11,7 +14,18 @@ export const verifyRecaptcha = async (req, res, next) => {
             const { recaptchaToken } = req.body;
 
             if (!recaptchaToken) {
-                return res.status(400).json({ message: "Thiếu reCAPTCHA token. Vui lòng xác thực bạn không phải là robot." });
+                return res.status(400).json({
+                    message: "Thiếu reCAPTCHA token",
+                    code: "MISSING_RECAPTCHA"
+                });
+            }
+
+            // Kiểm tra độ dài token
+            if (recaptchaToken.length < 10 || recaptchaToken.length > 1000) {
+                return res.status(400).json({
+                    message: "Token reCAPTCHA không hợp lệ",
+                    code: "INVALID_RECAPTCHA_TOKEN"
+                });
             }
 
             console.log("Verifying reCAPTCHA...");
@@ -31,17 +45,29 @@ export const verifyRecaptcha = async (req, res, next) => {
                 const errorCodes = data["error-codes"] || [];
                 console.log("reCAPTCHA verification failed. Error codes:", errorCodes);
                 return res.status(400).json({
-                    message: "Xác thực bảo mật thất bại. Vui lòng thử lại.",
+                    message: "Xác thực bảo mật thất bại",
+                    code: "RECAPTCHA_FAILED",
                     error: errorCodes
                 });
             }
 
-            // reCAPTCHA passed, continue to next middleware
+            // Kiểm tra score nếu dùng reCAPTCHA v3
+            if (data.score && data.score < 0.5) {
+                return res.status(400).json({
+                    message: "Xác thực bảo mật không đạt yêu cầu",
+                    code: "RECAPTCHA_LOW_SCORE",
+                    score: data.score
+                });
+            }
+
             console.log("reCAPTCHA verification successful");
             next();
         } catch (error) {
             console.error("reCAPTCHA verification error:", error);
-            return res.status(500).json({ message: "Lỗi xác thực bảo mật. Vui lòng thử lại sau." });
+            return res.status(500).json({
+                message: "Lỗi xác thực bảo mật",
+                code: "RECAPTCHA_SERVER_ERROR"
+            });
         }
     } else {
         // Skip reCAPTCHA for other routes

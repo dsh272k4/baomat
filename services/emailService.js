@@ -1,3 +1,4 @@
+// secure-backend/services/emailService.js
 import { createTransporter, getLoginAlertTemplate } from '../config/emailConfig.js';
 
 export class EmailService {
