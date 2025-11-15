@@ -9,7 +9,8 @@ import path from "path";
 import { pool } from "./config/db.js";
 import { simpleWAF } from "./middleware/waf.js";
 import { checkPasswordExpiry } from "./middleware/passwordPolicy.js";
-import { xssMiddleware, strictXSSMiddleware } from "./middleware/xssSanitizer.js"; // THÊM XSS MIDDLEWARE
+import { xssMiddleware, strictXSSMiddleware } from "./middleware/xssSanitizer.js";
+
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import logRoutes from "./routes/logRoutes.js";
@@ -22,34 +23,21 @@ const PORT = process.env.PORT || 3001;
 const logDir = "/tmp/logs";
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
-// Security Headers với CSP mạnh mẽ
+// 🔧 SỬA CSP HEADERS - Cho phép Google reCAPTCHA
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            // 💡 SỬA ĐỔI TẠI ĐÂY
-            scriptSrc: [
-                "'self'",
-                "'unsafe-inline'",
-                "'unsafe-eval'", // <-- THÊM ĐỂ SỬA LỖI EVAL() CỦA RECAPTCHA
-                "https://www.google.com",
-                "https://www.gstatic.com"
-            ],
+            scriptSrc: ["'self'", "'unsafe-inline'", "https://www.google.com", "https://www.gstatic.com"],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             imgSrc: ["'self'", "data:", "https:"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             connectSrc: ["'self'"],
-            objectSrc: ["'none'"],
-            mediaSrc: ["'self'"],
-            frameSrc: ["'self'", "https://www.google.com"] // Dòng này đã đúng
+            frameSrc: ["'self'", "https://www.google.com", "https://recaptcha.google.com"],
+            objectSrc: ["'none'"]
         }
     },
-    crossOriginEmbedderPolicy: false,
-    hsts: {
-        maxAge: 31536000,
-        includeSubDomains: true,
-        preload: true
-    }
+    crossOriginEmbedderPolicy: false
 }));
 
 app.use(cors({
@@ -63,7 +51,7 @@ app.use(cors({
     credentials: true
 }));
 
-app.use(express.json({ limit: '1mb' })); // Giới hạn kích thước JSON
+app.use(express.json({ limit: '1mb' }));
 app.use(rateLimit({
     windowMs: 60 * 1000,
     max: 100,
@@ -73,7 +61,7 @@ app.use(rateLimit({
     }
 }));
 
-// THÊM CÁC MIDDLEWARE XSS VÀO ĐÂY
+// XSS Middleware
 app.use(xssMiddleware);
 app.use(strictXSSMiddleware);
 app.use(simpleWAF);
@@ -94,36 +82,12 @@ app.get("/health", (req, res) => {
     res.json({
         status: "ok",
         time: new Date().toISOString(),
-        security: "XSS-Protected",
-        features: ["WAF", "XSS Protection", "Rate Limiting", "CSP"]
-    });
-});
-
-// 404 handler
-app.use((req, res) => {
-    res.status(404).json({
-        message: "Route không tồn tại",
-        code: "ROUTE_NOT_FOUND"
-    });
-});
-
-// Global error handler
-app.use((err, req, res, next) => {
-    console.error('Global error handler:', err);
-
-    // Không leak thông tin error trong production
-    const message = process.env.NODE_ENV === 'production'
-        ? "Lỗi máy chủ nội bộ"
-        : err.message;
-
-    res.status(500).json({
-        message,
-        code: "INTERNAL_SERVER_ERROR"
+        security: "XSS-Protected"
     });
 });
 
 // start server
 app.listen(PORT, () => {
     console.log(`🚀 Backend running on port ${PORT}`);
-    console.log(`🔒 Security features: XSS Protection, WAF, Rate Limiting, CSP`);
+    console.log(`🔒 XSS Protection Enabled - reCAPTCHA Ready`);
 });
