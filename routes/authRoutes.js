@@ -13,7 +13,7 @@ import {
 } from "../middleware/passwordPolicy.js";
 import { verifyToken } from "../middleware/auth.js";
 import { emailService } from "../services/emailService.js";
-
+import { otpService } from "../services/otpService.js";
 dotenv.config();
 const router = express.Router();
 const JWT_SECRET = process.env.JWT_SECRET || "supersecretkey";
