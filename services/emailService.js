@@ -50,6 +50,12 @@ class EmailService {
                 html,
             });
 
+            return {
+                success: true,
+                id: result.data?.id || null
+            };
+
+
             return { success: true, id: result.id };
         } catch (err) {
             console.error("❌ Resend sendLoginAlert error:", err);
