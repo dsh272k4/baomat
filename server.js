@@ -23,22 +23,29 @@ const PORT = process.env.PORT || 3001;
 const logDir = "/tmp/logs";
 if (!fs.existsSync(logDir)) fs.mkdirSync(logDir, { recursive: true });
 
-// 🔧 SỬA CSP HEADERS - Cho phép Google reCAPTCHA
+// 🔧 TẠM THỜI TẮT CSP TRONG BACKEND - Để reCAPTCHA hoạt động
+app.use(helmet({
+    contentSecurityPolicy: false
+}));
+
+// Hoặc nếu muốn giữ CSP, sử dụng cấu hình rất mở:
+/*
 app.use(helmet({
     contentSecurityPolicy: {
         directives: {
-            defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://www.google.com", "https://www.gstatic.com"],
-            styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
-            imgSrc: ["'self'", "data:", "https:"],
-            fontSrc: ["'self'", "https://fonts.gstatic.com"],
-            connectSrc: ["'self'"],
-            frameSrc: ["'self'", "https://www.google.com", "https://recaptcha.google.com"],
+            defaultSrc: ["'self'", "https:", "http:", "data:", "blob:"],
+            scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'", "https:", "http:"],
+            styleSrc: ["'self'", "'unsafe-inline'", "https:", "http:"],
+            imgSrc: ["'self'", "data:", "https:", "http:", "blob:"],
+            fontSrc: ["'self'", "https:", "http:"],
+            connectSrc: ["'self'", "https:", "http:", "wss:"],
+            frameSrc: ["'self'", "https:", "http:"],
             objectSrc: ["'none'"]
         }
     },
     crossOriginEmbedderPolicy: false
 }));
+*/
 
 app.use(cors({
     origin: [
