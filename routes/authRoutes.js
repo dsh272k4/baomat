@@ -54,6 +54,7 @@ router.post("/auth/register", verifyRecaptcha, async (req, res) => {
 });
 
 // LOGIN - Cập nhật để gửi email thông báo
+// LOGIN - Cập nhật để xử lý email errors tốt hơn
 router.post("/auth/login", verifyRecaptcha, async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -120,35 +121,54 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
             { expiresIn: JWT_EXPIRES }
         );
 
-        // 🔐 GỬI EMAIL THÔNG BÁO ĐĂNG NHẬP NẾU USER CÓ EMAIL VÀ CHO PHÉP
+        // 🔐 GỬI EMAIL THÔNG BÁO ĐĂNG NHẬP - VỚI ERROR HANDLING TỐT HƠN
         try {
-            // 🔐 Gửi email cảnh báo đăng nhập (Resend)
             if (user.email && user.receive_login_alerts === 1) {
                 const loginData = {
-                    ip: req.ip || "Unknown",
-                    browser: req.headers["user-agent"] || "Unknown",
-                    loginTime: now.toLocaleString("vi-VN", {
-                        timeZone: "Asia/Ho_Chi_Minh",
-                        year: "numeric",
-                        month: "2-digit",
-                        day: "2-digit",
-                        hour: "2-digit",
-                        minute: "2-digit",
-                        second: "2-digit"
+                    ip: req.ip || req.connection.remoteAddress || req.socket.remoteAddress || 'Không xác định',
+                    browser: req.headers['user-agent'] || 'Không xác định',
+                    loginTime: now.toLocaleString('vi-VN', {
+                        timeZone: 'Asia/Ho_Chi_Minh',
+                        year: 'numeric',
+                        month: '2-digit',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
                     })
                 };
 
-                // async không block response
-                emailService.sendLoginAlert(user.email, user.username, loginData)
-                    .then(r => console.log("📧 Resend sent OK:", r))
-                    .catch(e => console.error("❌ Resend error:", e));
-            } else {
-                console.log("📧 Skip alert: no email or disabled");
-            }
+                console.log(`📧 Preparing to send login alert to: ${user.email}`);
 
+                // Gửi email bất đồng bộ, không await để không làm chậm response
+                emailService.sendLoginAlert(user.email, user.username, loginData)
+                    .then(result => {
+                        if (result.success) {
+                            // Cập nhật thời gian gửi thông báo cuối
+                            pool.query(
+                                "UPDATE users SET last_login_notification = ? WHERE id = ?",
+                                [now, user.id]
+                            ).catch(dbError => {
+                                console.error('Error updating notification time:', dbError);
+                            });
+                            console.log(`✅ Login notification sent to ${user.email}`);
+                        } else {
+                            console.log(`⚠️ Email sending failed for ${user.email}:`, result.error);
+                        }
+                    })
+                    .catch(emailError => {
+                        console.error('Email sending process failed:', emailError);
+                    });
+            } else {
+                console.log(`📧 Email alert skipped for user ${user.username}:`, {
+                    hasEmail: !!user.email,
+                    wantsAlerts: user.receive_login_alerts === 1,
+                    emailEnabled: emailService.isEnabled
+                });
+            }
         } catch (emailError) {
             console.error('Error in email notification process:', emailError);
-            // Không throw error để không ảnh hưởng đến trải nghiệm đăng nhập
+            // KHÔNG ảnh hưởng đến response đăng nhập
         }
 
         res.json({ token });
@@ -157,6 +177,7 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
         res.status(500).json({ message: "Lỗi máy chủ" });
     }
 });
+
 
 // GET /api/auth/profile - Cập nhật để lấy thêm thông tin email settings
 router.get("/auth/profile", verifyToken, async (req, res) => {
