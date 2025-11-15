@@ -1,3 +1,4 @@
+// secure-backend/middleware/xssSanitizer.js
 import DOMPurify from 'dompurify';
 import { JSDOM } from 'jsdom';
 

@@ -1,4 +1,3 @@
-//  secure-backend/routes/adminRoutes.js
 import express from "express";
 import bcrypt from "bcryptjs";
 import fs from "fs";

@@ -27,14 +27,21 @@ app.use(helmet({
     contentSecurityPolicy: {
         directives: {
             defaultSrc: ["'self'"],
-            scriptSrc: ["'self'", "'unsafe-inline'", "https://www.google.com", "https://www.gstatic.com"],
+            // 💡 SỬA ĐỔI TẠI ĐÂY
+            scriptSrc: [
+                "'self'",
+                "'unsafe-inline'",
+                "'unsafe-eval'", // <-- THÊM ĐỂ SỬA LỖI EVAL() CỦA RECAPTCHA
+                "https://www.google.com",
+                "https://www.gstatic.com"
+            ],
             styleSrc: ["'self'", "'unsafe-inline'", "https://fonts.googleapis.com"],
             imgSrc: ["'self'", "data:", "https:"],
             fontSrc: ["'self'", "https://fonts.gstatic.com"],
             connectSrc: ["'self'"],
             objectSrc: ["'none'"],
             mediaSrc: ["'self'"],
-            frameSrc: ["'self'", "https://www.google.com"]
+            frameSrc: ["'self'", "https://www.google.com"] // Dòng này đã đúng
         }
     },
     crossOriginEmbedderPolicy: false,
