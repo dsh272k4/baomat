@@ -207,15 +207,46 @@ router.put("/auth/email-settings", verifyToken, async (req, res) => {
 });
 
 // PUT /api/auth/profile - Cập nhật thông tin profile
+// ... các import khác giữ nguyên
+
+// PUT /api/auth/profile - Cập nhật thông tin profile với XSS validation
 router.put("/auth/profile", verifyToken, async (req, res) => {
     try {
         const { full_name, email, phone } = req.body;
 
+        // 🔒 VALIDATION STRICTER - Kiểm tra XSS patterns
+        const xssPatterns = [
+            /<script/i, /<\/script/i, /javascript:/i, /onload=/i,
+            /onerror=/i, /onclick=/i, /eval\(/i, /alert\(/i
+        ];
+
+        const validateInput = (input, fieldName) => {
+            if (!input) return null;
+
+            for (const pattern of xssPatterns) {
+                if (pattern.test(input)) {
+                    throw new Error(`Giá trị ${fieldName} chứa nội dung không hợp lệ`);
+                }
+            }
+
+            // Kiểm tra ký tự HTML
+            if (/<[a-z][\s\S]*>/i.test(input)) {
+                throw new Error(`Giá trị ${fieldName} không được chứa thẻ HTML`);
+            }
+
+            return input;
+        };
+
+        // Validate từng trường
+        const safeFullName = validateInput(full_name, "họ tên");
+        const safeEmail = validateInput(email, "email");
+        const safePhone = validateInput(phone, "số điện thoại");
+
         // Kiểm tra email (nếu thay đổi) có bị trùng không
-        if (email) {
+        if (safeEmail) {
             const [exists] = await pool.query(
                 "SELECT id FROM users WHERE email=? AND id != ?",
-                [email, req.user.id]
+                [safeEmail, req.user.id]
             );
             if (exists.length) {
                 return res.status(400).json({ message: "Email này đã được sử dụng bởi tài khoản khác" });
@@ -224,12 +255,20 @@ router.put("/auth/profile", verifyToken, async (req, res) => {
 
         await pool.query(
             "UPDATE users SET full_name = ?, email = ?, phone = ? WHERE id = ?",
-            [full_name, email, phone, req.user.id]
+            [safeFullName, safeEmail, safePhone, req.user.id]
         );
 
         res.json({ message: "Cập nhật thông tin thành công" });
     } catch (err) {
         console.error("Update profile error:", err);
+
+        if (err.message.includes("không hợp lệ") || err.message.includes("thẻ HTML")) {
+            return res.status(400).json({
+                message: err.message,
+                code: "INVALID_INPUT"
+            });
+        }
+
         res.status(500).json({ message: "Lỗi máy chủ" });
     }
 });

@@ -6,10 +6,23 @@ const domPurify = DOMPurify(window);
 
 // Hàm sanitize cho các loại dữ liệu
 export const xssSanitizer = {
-    // Sanitize string
+    // Sanitize string - STRICTER VERSION
     sanitizeString: (input) => {
         if (typeof input !== 'string') return input;
-        return domPurify.sanitize(input.trim());
+
+        // Loại bỏ hoàn toàn các thẻ HTML và script
+        const sanitized = domPurify.sanitize(input, {
+            ALLOWED_TAGS: [], // KHÔNG cho phép bất kỳ tag nào
+            ALLOWED_ATTR: []  // KHÔNG cho phép bất kỳ attribute nào
+        });
+
+        // Thêm biện pháp phòng thủ: escape các ký tự đặc biệt
+        return sanitized
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;')
+            .replace(/'/g, '&#x27;')
+            .replace(/\//g, '&#x2F;');
     },
 
     // Sanitize object recursively
@@ -23,7 +36,7 @@ export const xssSanitizer = {
                 const value = obj[key];
 
                 if (typeof value === 'string') {
-                    sanitized[key] = domPurify.sanitize(value.trim());
+                    sanitized[key] = xssSanitizer.sanitizeString(value);
                 } else if (typeof value === 'object' && value !== null) {
                     sanitized[key] = xssSanitizer.sanitizeObject(value);
                 } else {
@@ -64,31 +77,56 @@ export const xssMiddleware = (req, res, next) => {
     }
 };
 
-// Middleware strict XSS check
+// Middleware strict XSS check - STRICTER VERSION
 export const strictXSSMiddleware = (req, res, next) => {
     const blacklist = [
-        '<script>', '</script>', 'javascript:', 'onload=', 'onerror=',
+        '<script', '</script', 'javascript:', 'onload=', 'onerror=',
         'onclick=', 'onmouseover=', 'eval(', 'alert(', 'document.cookie',
-        'window.location', 'innerHTML', 'outerHTML'
+        'window.location', 'innerHTML', 'outerHTML', '<iframe', '<img',
+        '<svg', 'onload'
     ];
 
-    const checkForXSS = (obj) => {
+    const checkForXSS = (obj, path = '') => {
         for (const key in obj) {
-            if (typeof obj[key] === 'string') {
-                const value = obj[key].toLowerCase();
-                if (blacklist.some(pattern => value.includes(pattern))) {
-                    return true;
+            if (Object.prototype.hasOwnProperty.call(obj, key)) {
+                const currentPath = path ? `${path}.${key}` : key;
+
+                if (typeof obj[key] === 'string') {
+                    const value = obj[key].toLowerCase();
+
+                    // Kiểm tra blacklist patterns
+                    const foundPattern = blacklist.find(pattern => value.includes(pattern));
+                    if (foundPattern) {
+                        console.log(`XSS detected in ${currentPath}: ${foundPattern} in "${obj[key]}"`);
+                        return true;
+                    }
+
+                    // Kiểm tra các ký tự HTML/script cơ bản
+                    if (/<[a-z][\s\S]*>/i.test(obj[key]) || /script/i.test(obj[key])) {
+                        console.log(`HTML/SCRIPT tag detected in ${currentPath}: "${obj[key]}"`);
+                        return true;
+                    }
+                } else if (typeof obj[key] === 'object' && obj[key] !== null) {
+                    if (checkForXSS(obj[key], currentPath)) return true;
                 }
-            } else if (typeof obj[key] === 'object' && obj[key] !== null) {
-                if (checkForXSS(obj[key])) return true;
             }
         }
         return false;
     };
 
-    if ([req.query, req.body, req.params].some(checkForXSS)) {
+    // Kiểm tra tất cả các phần của request
+    const hasXSS = [req.query, req.body, req.params].some(checkForXSS);
+
+    if (hasXSS) {
+        console.log('🚨 XSS Attack Blocked:', {
+            ip: req.ip,
+            method: req.method,
+            path: req.path,
+            body: req.body
+        });
+
         return res.status(400).json({
-            message: "Request chứa nội dung nguy hiểm",
+            message: "Dữ liệu chứa nội dung nguy hiểm. Vui lòng kiểm tra lại.",
             code: "XSS_ATTACK_DETECTED"
         });
     }
