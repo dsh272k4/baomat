@@ -1,4 +1,3 @@
-// secure-backend/server.js
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -10,6 +9,9 @@ import path from "path";
 import { pool } from "./config/db.js";
 import { simpleWAF } from "./middleware/waf.js";
 import { checkPasswordExpiry } from "./middleware/passwordPolicy.js";
+// 🔒 THÊM DÒNG NÀY - XSS Protection
+import { xssMiddleware, strictXSSMiddleware } from "./middleware/xssSanitizer.js";
+
 import authRoutes from "./routes/authRoutes.js";
 import adminRoutes from "./routes/adminRoutes.js";
 import logRoutes from "./routes/logRoutes.js";
@@ -35,6 +37,11 @@ app.use(cors({
 app.use(helmet());
 app.use(express.json());
 app.use(rateLimit({ windowMs: 60 * 1000, max: 100 }));
+
+// 🔒 THÊM 2 DÒNG NÀY - XSS Middleware
+app.use(xssMiddleware);
+app.use(strictXSSMiddleware);
+
 app.use(simpleWAF);
 app.use(checkPasswordExpiry);
 
@@ -56,4 +63,5 @@ app.get("/health", (req, res) => {
 // start server
 app.listen(PORT, () => {
     console.log(`🚀 Backend running on port ${PORT}`);
+    console.log(`🔒 XSS Protection Enabled`); // THÊM DÒNG NÀY
 });
