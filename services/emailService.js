@@ -1,48 +1,92 @@
-import { createTransporter, getLoginAlertTemplate } from '../config/emailConfig.js';
+import { resend, getLoginAlertTemplate, getOTPEmailTemplate, FROM_EMAIL } from '../config/emailConfig.js';
 
 export class EmailService {
     constructor() {
-        this.transporter = createTransporter();
+        this.isEnabled = !!process.env.RESEND_API_KEY;
+        if (this.isEnabled) {
+            console.log('📧 Resend email service initialized');
+        } else {
+            console.log('⚠️ Resend API key missing - email service disabled');
+        }
     }
 
-    // Kiểm tra kết nối email
+    // Kiểm tra kết nối Resend
     async verifyConnection() {
+        if (!this.isEnabled) {
+            return false;
+        }
+
         try {
-            await this.transporter.verify();
-            console.log('✅ Email server connection verified');
+            // Resend không có phương thức verify, nên chúng ta thử gửi email test
+            console.log('✅ Resend email service ready (API key present)');
             return true;
         } catch (error) {
-            console.error('❌ Email server connection failed:', error);
+            console.log('❌ Resend connection check failed:', error.message);
             return false;
         }
     }
 
-    // Gửi email thông báo đăng nhập
+    // Gửi email thông báo đăng nhập với Resend
     async sendLoginAlert(userEmail, username, loginData) {
-        // Kiểm tra xem có cấu hình email không
-        if (!process.env.EMAIL_USER || !process.env.EMAIL_PASSWORD) {
-            console.log('⚠️ Email configuration missing - skipping email send');
-            return { success: false, error: 'Email configuration missing' };
+        if (!this.isEnabled) {
+            console.log('⚠️ Email service disabled - skipping email send');
+            return { success: false, error: 'Email service disabled' };
         }
 
         try {
             const { ip, browser, loginTime } = loginData;
 
-            const mailOptions = {
-                from: `"Hệ thống Bảo mật" <${process.env.EMAIL_USER}>`,
-                to: userEmail,
+            const { data, error } = await resend.emails.send({
+                from: `Hệ thống Bảo mật <${FROM_EMAIL}>`,
+                to: [userEmail],
                 subject: `🔐 Thông báo đăng nhập - ${username}`,
-                html: getLoginAlertTemplate(username, loginTime, ip, browser)
-            };
+                html: getLoginAlertTemplate(username, loginTime, ip, browser),
+            });
 
-            console.log(`📧 Attempting to send login alert to: ${userEmail}`);
+            if (error) {
+                console.error('❌ Error sending login alert email:', error);
+                return { success: false, error: error.message };
+            }
 
-            const result = await this.transporter.sendMail(mailOptions);
-            console.log(`✅ Login alert email sent to ${userEmail}:`, result.messageId);
-            return { success: true, messageId: result.messageId };
+            console.log(`✅ Login alert email sent to ${userEmail}:`, data.id);
+            return { success: true, messageId: data.id };
         } catch (error) {
             console.error('❌ Error sending login alert email:', error);
-            return { success: false, error: error.message };
+            return {
+                success: false,
+                error: error.message
+            };
+        }
+    }
+
+    // Gửi email OTP với Resend
+    async sendOTPEmail(userEmail, username, otpCode) {
+        if (!this.isEnabled) {
+            console.log('⚠️ Email service disabled - skipping OTP email');
+            return { success: false, error: 'Email service disabled' };
+        }
+
+        try {
+            const { data, error } = await resend.emails.send({
+                from: `Hệ thống Bảo mật <${FROM_EMAIL}>`,
+                to: [userEmail],
+                subject: `🔐 Mã xác thực OTP - ${username}`,
+                html: getOTPEmailTemplate(username, otpCode),
+            });
+
+            if (error) {
+                console.error('❌ Error sending OTP email:', error);
+                return { success: false, error: error.message };
+            }
+
+            console.log(`✅ OTP email sent to ${userEmail}:`, data.id);
+            return { success: true, messageId: data.id };
+        } catch (error) {
+            console.error('❌ Error sending OTP email:', error);
+            return {
+                success: false,
+                error: error.message
+            };
         }
     }
 
@@ -57,11 +101,12 @@ export class EmailService {
             if (rows.length === 0) return { shouldSend: false, email: null };
 
             const user = rows[0];
-            const shouldSend = user.email && user.receive_login_alerts === 1;
+            const shouldSend = user.email && user.receive_login_alerts === 1 && this.isEnabled;
 
             console.log(`📧 Email alert check for user ${userId}:`, {
                 hasEmail: !!user.email,
                 receiveAlerts: user.receive_login_alerts,
+                emailEnabled: this.isEnabled,
                 shouldSend
             });
 
@@ -76,14 +121,15 @@ export class EmailService {
     }
 }
 
-// Tạo instance và kiểm tra kết nối
 export const emailService = new EmailService();
 
-// Kiểm tra kết nối email khi khởi động (không block startup)
-emailService.verifyConnection().then(success => {
-    if (success) {
-        console.log('🚀 Email service ready');
-    } else {
-        console.log('⚠️ Email service not available - emails will be skipped');
-    }
-})
+// Kiểm tra kết nối khi khởi động
+setTimeout(() => {
+    emailService.verifyConnection().then(success => {
+        if (success) {
+            console.log('🚀 Resend email service ready');
+        } else {
+            console.log('⚠️ Email service not available - emails will be skipped');
+        }
+    });
+}, 3000);

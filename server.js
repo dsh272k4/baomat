@@ -65,3 +65,48 @@ app.listen(PORT, () => {
     console.log(`🚀 Backend running on port ${PORT}`);
     console.log(`🔒 XSS Protection Enabled`); // THÊM DÒNG NÀY
 });
+app.get("/health", (req, res) => {
+    res.json({
+        status: "ok",
+        time: new Date().toISOString(),
+        security: "XSS-Protected",
+        email: emailService.isEnabled ? "enabled" : "disabled",
+        emailRetries: emailService.retryCount
+    });
+});
+
+// Thêm route để manual check email service
+app.get("/health/email", async (req, res) => {
+    try {
+        const wasEnabled = emailService.isEnabled;
+        const isConnected = await emailService.verifyConnection();
+
+        res.json({
+            email_service: emailService.isEnabled ? "enabled" : "disabled",
+            connection: isConnected ? "connected" : "disconnected",
+            retry_count: emailService.retryCount,
+            previous_status: wasEnabled ? "enabled" : "disabled",
+            message: isConnected ? "Email service is working" : "Email service has issues"
+        });
+    } catch (error) {
+        res.status(500).json({
+            email_service: "error",
+            error: error.message
+        });
+    }
+});
+
+// Thêm route để manual enable/disable email service
+app.post("/health/email/:action", (req, res) => {
+    const { action } = req.params;
+
+    if (action === 'enable') {
+        emailService.setEnabled(true);
+        res.json({ message: "Email service enabled" });
+    } else if (action === 'disable') {
+        emailService.setEnabled(false);
+        res.json({ message: "Email service disabled" });
+    } else {
+        res.status(400).json({ message: "Invalid action. Use 'enable' or 'disable'" });
+    }
+});

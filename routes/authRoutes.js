@@ -109,6 +109,40 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
             [user.id]
         );
 
+        // 🔐 KIỂM TRA XEM CÓ CẦN OTP KHÔNG
+        const requireOTP = await otpService.shouldRequireOTP(user.id);
+
+        if (requireOTP) {
+            // Kiểm tra xem user có email không
+            if (!user.email) {
+                return res.status(400).json({
+                    message: "Tài khoản chưa có email. Vui lòng cập nhật email để nhận mã OTP.",
+                    code: "NO_EMAIL_FOR_OTP"
+                });
+            }
+
+            // Tạo và gửi OTP
+            const otpCode = otpService.generateOTP();
+            await otpService.saveOTP(user.id, otpCode);
+
+            const emailResult = await otpService.sendOTPEmail(user.email, user.username, otpCode);
+
+            if (!emailResult.success) {
+                return res.status(500).json({
+                    message: "Không thể gửi mã OTP. Vui lòng thử lại sau.",
+                    code: "OTP_SEND_FAILED"
+                });
+            }
+
+            return res.json({
+                message: "Vui lòng kiểm tra email để lấy mã OTP",
+                requireOTP: true,
+                userId: user.id,
+                expiresIn: "10 phút"
+            });
+        }
+
+        // Nếu không cần OTP, tạo token ngay
         const token = jwt.sign(
             {
                 id: user.id,
@@ -120,7 +154,7 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
             { expiresIn: JWT_EXPIRES }
         );
 
-        // 🔐 GỬI EMAIL THÔNG BÁO ĐĂNG NHẬP NẾU USER CÓ EMAIL VÀ CHO PHÉP
+        // 🔐 GỬI EMAIL THÔNG BÁO ĐĂNG NHẬP (nếu có)
         try {
             if (user.email && user.receive_login_alerts === 1) {
                 const loginData = {
@@ -137,44 +171,33 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
                     })
                 };
 
-                console.log(`📧 Preparing to send login alert to: ${user.email}`);
-
-                // Gửi email bất đồng bộ, không await để không làm chậm response
                 emailService.sendLoginAlert(user.email, user.username, loginData)
                     .then(result => {
                         if (result.success) {
-                            // Cập nhật thời gian gửi thông báo cuối
                             pool.query(
                                 "UPDATE users SET last_login_notification = ? WHERE id = ?",
                                 [now, user.id]
                             ).catch(dbError => {
                                 console.error('Error updating notification time:', dbError);
                             });
-                            console.log(`✅ Login notification sent to ${user.email}`);
-                        } else {
-                            console.log(`⚠️ Email sending failed for ${user.email}:`, result.error);
                         }
                     })
                     .catch(emailError => {
                         console.error('Email sending failed:', emailError);
                     });
-            } else {
-                console.log(`📧 Email alert skipped for user ${user.username}:`, {
-                    hasEmail: !!user.email,
-                    wantsAlerts: user.receive_login_alerts === 1
-                });
             }
         } catch (emailError) {
             console.error('Error in email notification process:', emailError);
-            // Không throw error để không ảnh hưởng đến trải nghiệm đăng nhập
         }
 
         res.json({ token });
+
     } catch (err) {
         console.error("Login error:", err);
         res.status(500).json({ message: "Lỗi máy chủ" });
     }
 });
+
 
 // GET /api/auth/profile - Cập nhật để lấy thêm thông tin email settings
 router.get("/auth/profile", verifyToken, async (req, res) => {
@@ -368,5 +391,165 @@ router.get("/auth/password-policy", verifyToken, (req, res) => {
         description: "Mật khẩu phải có ít nhất 12 ký tự, bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt. Mật khẩu cần được thay đổi mỗi 90 ngày."
     });
 });
+router.post("/auth/send-otp", async (req, res) => {
+    try {
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ message: "Thiếu thông tin người dùng" });
+        }
+
+        // Lấy thông tin user
+        const [rows] = await pool.query(
+            "SELECT id, username, email FROM users WHERE id = ?",
+            [userId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: "Không tìm thấy người dùng" });
+        }
+
+        const user = rows[0];
+
+        // Kiểm tra xem user có email không
+        if (!user.email) {
+            return res.status(400).json({
+                message: "Tài khoản chưa có email. Vui lòng cập nhật email trong phần thông tin cá nhân.",
+                code: "NO_EMAIL"
+            });
+        }
+
+        // Tạo và lưu OTP
+        const otpCode = otpService.generateOTP();
+        const saveResult = await otpService.saveOTP(user.id, otpCode);
+
+        if (!saveResult) {
+            return res.status(500).json({ message: "Lỗi tạo mã OTP" });
+        }
+
+        // Gửi OTP qua email
+        const emailResult = await otpService.sendOTPEmail(user.email, user.username, otpCode);
+
+        if (!emailResult.success) {
+            return res.status(500).json({
+                message: "Không thể gửi mã OTP. Vui lòng thử lại sau.",
+                code: "EMAIL_SEND_FAILED"
+            });
+        }
+
+        res.json({
+            message: "Mã OTP đã được gửi đến email của bạn",
+            expiresIn: "10 phút"
+        });
+
+    } catch (err) {
+        console.error("Send OTP error:", err);
+        res.status(500).json({ message: "Lỗi máy chủ" });
+    }
+});
+
+// POST /api/auth/verify-otp - Xác thực OTP
+router.post("/auth/verify-otp", async (req, res) => {
+    try {
+        const { userId, otpCode } = req.body;
+
+        if (!userId || !otpCode) {
+            return res.status(400).json({ message: "Thiếu thông tin xác thực" });
+        }
+
+        // Kiểm tra OTP
+        const verification = await otpService.verifyOTP(userId, otpCode);
+
+        if (!verification.isValid) {
+            return res.status(400).json({ message: verification.message });
+        }
+
+        // Lấy thông tin user để tạo token
+        const [rows] = await pool.query(
+            "SELECT id, username, role FROM users WHERE id = ?",
+            [userId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: "Không tìm thấy người dùng" });
+        }
+
+        const user = rows[0];
+
+        // Tạo JWT token
+        const token = jwt.sign(
+            {
+                id: user.id,
+                username: user.username,
+                role: user.role
+            },
+            JWT_SECRET,
+            { expiresIn: JWT_EXPIRES }
+        );
+
+        res.json({
+            message: "Xác thực OTP thành công",
+            token
+        });
+
+    } catch (err) {
+        console.error("Verify OTP error:", err);
+        res.status(500).json({ message: "Lỗi máy chủ" });
+    }
+});
+
+// POST /api/auth/resend-otp - Gửi lại OTP
+router.post("/auth/resend-otp", async (req, res) => {
+    try {
+        const { userId } = req.body;
+
+        if (!userId) {
+            return res.status(400).json({ message: "Thiếu thông tin người dùng" });
+        }
+
+        // Lấy thông tin user
+        const [rows] = await pool.query(
+            "SELECT id, username, email FROM users WHERE id = ?",
+            [userId]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: "Không tìm thấy người dùng" });
+        }
+
+        const user = rows[0];
+
+        if (!user.email) {
+            return res.status(400).json({
+                message: "Tài khoản chưa có email",
+                code: "NO_EMAIL"
+            });
+        }
+
+        // Tạo OTP mới
+        const otpCode = otpService.generateOTP();
+        await otpService.saveOTP(user.id, otpCode);
+
+        // Gửi email
+        const emailResult = await otpService.sendOTPEmail(user.email, user.username, otpCode);
+
+        if (!emailResult.success) {
+            return res.status(500).json({
+                message: "Không thể gửi mã OTP",
+                code: "EMAIL_SEND_FAILED"
+            });
+        }
+
+        res.json({
+            message: "Đã gửi lại mã OTP thành công",
+            expiresIn: "10 phút"
+        });
+
+    } catch (err) {
+        console.error("Resend OTP error:", err);
+        res.status(500).json({ message: "Lỗi máy chủ" });
+    }
+});
+
 
 export default router;
