@@ -7,7 +7,7 @@ dotenv.config();
 export const resend = new Resend(process.env.RESEND_API_KEY);
 
 // Domain bạn đã verify trong Resend
-const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'security@dta2k4.shop';
+export const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || 'security@dta2k4.shop';
 
 export const getLoginAlertTemplate = (username, loginTime, ip, browser) => {
     return `
@@ -69,5 +69,3 @@ export const getOTPEmailTemplate = (username, otpCode) => {
     `;
 };
 
-// Export từ email cho Resend
-export const FROM_EMAIL = FROM_EMAIL;
