@@ -54,6 +54,7 @@ router.post("/auth/register", verifyRecaptcha, async (req, res) => {
 });
 
 // LOGIN - Cập nhật để gửi email thông báo
+// LOGIN - Cập nhật để chỉ yêu cầu OTP nếu có email
 router.post("/auth/login", verifyRecaptcha, async (req, res) => {
     try {
         const { username, password } = req.body;
@@ -109,18 +110,10 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
             [user.id]
         );
 
-        // 🔐 KIỂM TRA XEM CÓ CẦN OTP KHÔNG
+        // 🔧 SỬA: Chỉ yêu cầu OTP nếu user có email
         const requireOTP = await otpService.shouldRequireOTP(user.id);
 
         if (requireOTP) {
-            // Kiểm tra xem user có email không
-            if (!user.email) {
-                return res.status(400).json({
-                    message: "Tài khoản chưa có email. Vui lòng cập nhật email để nhận mã OTP.",
-                    code: "NO_EMAIL_FOR_OTP"
-                });
-            }
-
             // Tạo và gửi OTP
             const otpCode = otpService.generateOTP();
             await otpService.saveOTP(user.id, otpCode);
@@ -142,7 +135,7 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
             });
         }
 
-        // Nếu không cần OTP, tạo token ngay
+        // 🔧 Nếu không có email, tạo token ngay (không cần OTP)
         const token = jwt.sign(
             {
                 id: user.id,
@@ -154,7 +147,7 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
             { expiresIn: JWT_EXPIRES }
         );
 
-        // 🔐 GỬI EMAIL THÔNG BÁO ĐĂNG NHẬP (nếu có)
+        // 🔐 GỬI EMAIL THÔNG BÁO ĐĂNG NHẬP (chỉ nếu có email và user cho phép)
         try {
             if (user.email && user.receive_login_alerts === 1) {
                 const loginData = {
@@ -171,26 +164,48 @@ router.post("/auth/login", verifyRecaptcha, async (req, res) => {
                     })
                 };
 
+                console.log(`📧 Preparing to send login alert to: ${user.email}`);
+
                 emailService.sendLoginAlert(user.email, user.username, loginData)
                     .then(result => {
                         if (result.success) {
+                            // Cập nhật thời gian gửi thông báo cuối
                             pool.query(
                                 "UPDATE users SET last_login_notification = ? WHERE id = ?",
                                 [now, user.id]
                             ).catch(dbError => {
                                 console.error('Error updating notification time:', dbError);
                             });
+                            console.log(`✅ Login notification sent to ${user.email}`);
+                        } else {
+                            console.log(`⚠️ Email sending failed for ${user.email}:`, result.error);
                         }
                     })
                     .catch(emailError => {
-                        console.error('Email sending failed:', emailError);
+                        console.error('Email sending process failed:', emailError);
                     });
+            } else {
+                console.log(`📧 Email alert skipped for user ${user.username}:`, {
+                    hasEmail: !!user.email,
+                    wantsAlerts: user.receive_login_alerts === 1
+                });
             }
         } catch (emailError) {
             console.error('Error in email notification process:', emailError);
+            // KHÔNG ảnh hưởng đến response đăng nhập
         }
 
-        res.json({ token });
+        // 🔧 THÊM THÔNG BÁO NẾU KHÔNG CÓ EMAIL
+        if (!user.email) {
+            console.log(`🔐 User ${user.username} logged in without OTP (no email)`);
+        }
+
+        res.json({
+            token,
+            // 🔧 THÊM THÔNG TIN ĐỂ FRONTEND BIẾT CÓ NÊN KHUYẾN NGHỊ THÊM EMAIL
+            hasEmail: !!user.email,
+            message: user.email ? "Đăng nhập thành công" : "Đăng nhập thành công. Hãy thêm email để bảo mật tốt hơn!"
+        });
 
     } catch (err) {
         console.error("Login error:", err);
@@ -390,6 +405,36 @@ router.get("/auth/password-policy", verifyToken, (req, res) => {
         },
         description: "Mật khẩu phải có ít nhất 12 ký tự, bao gồm chữ hoa, chữ thường, số và ký tự đặc biệt. Mật khẩu cần được thay đổi mỗi 90 ngày."
     });
+});
+// 🔧 THÊM: API để kiểm tra trạng thái OTP của user
+router.get("/auth/otp-status", verifyToken, async (req, res) => {
+    try {
+        const [rows] = await pool.query(
+            "SELECT email FROM users WHERE id = ?",
+            [req.user.id]
+        );
+
+        if (!rows.length) {
+            return res.status(404).json({ message: "Không tìm thấy người dùng" });
+        }
+
+        const user = rows[0];
+        const hasEmail = !!user.email && user.email.includes('@');
+        const requireOTP = hasEmail; // Hiện tại OTP được yêu cầu nếu có email
+
+        res.json({
+            hasEmail: hasEmail,
+            requireOTP: requireOTP,
+            email: user.email,
+            message: hasEmail
+                ? "Tài khoản đã kích hoạt bảo mật OTP"
+                : "Tài khoản chưa kích hoạt bảo mật OTP"
+        });
+
+    } catch (err) {
+        console.error("OTP status error:", err);
+        res.status(500).json({ message: "Lỗi máy chủ" });
+    }
 });
 router.post("/auth/send-otp", async (req, res) => {
     try {

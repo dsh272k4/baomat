@@ -72,13 +72,32 @@ export class OTPService {
         return await emailService.sendOTPEmail(userEmail, username, otpCode);
     }
 
-    // Kiểm tra xem user có cần OTP không
+    // 🔧 SỬA: Chỉ yêu cầu OTP nếu user có email
     async shouldRequireOTP(userId) {
-        // Luôn yêu cầu OTP cho mọi lần đăng nhập
-        return true;
+        try {
+            const [rows] = await pool.query(
+                'SELECT email FROM users WHERE id = ?',
+                [userId]
+            );
+
+            if (rows.length === 0) return false;
+
+            const user = rows[0];
+            const hasEmail = !!user.email && user.email.includes('@');
+
+            console.log(`🔐 OTP requirement check for user ${userId}:`, {
+                hasEmail: hasEmail,
+                email: user.email
+            });
+
+            return hasEmail;
+        } catch (error) {
+            console.error('Error checking OTP requirement:', error);
+            return false; // Trong trường hợp lỗi, không yêu cầu OTP
+        }
     }
 
-    // Xóa OTP hết hạn
+    // Xóa OTP hết hạn (cron job)
     async cleanupExpiredOTPs() {
         try {
             const result = await pool.query(
